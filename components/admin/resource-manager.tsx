@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type FieldOption = {
   label: string;
@@ -59,12 +59,19 @@ export function ResourceManager({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, FieldOption[]>>({});
+  const modalRef = useRef<HTMLDivElement | null>(null);
 
   const visibleFields = useMemo(
     () => fields.filter((field) => !field.tableOnly && (!editing || !field.createOnly)),
     [editing, fields],
   );
   const tableFields = useMemo(() => fields.filter((field) => !field.formOnly).slice(0, 6), [fields]);
+  const modalOpen = editing !== null || Object.keys(form).length > 0;
+  const closeModal = useCallback(() => {
+    setEditing(null);
+    setForm({});
+    setMessage(null);
+  }, []);
 
   function defaultFormValue(field: Field): string | number | boolean {
     if (field.defaultValue !== undefined) return field.defaultValue;
@@ -73,7 +80,13 @@ export function ResourceManager({
   }
 
   function fieldOptions(field: Field): FieldOption[] {
-    return [...(field.options ?? []), ...(dynamicOptions[field.name] ?? [])];
+    const options = [...(field.options ?? []), ...(dynamicOptions[field.name] ?? [])];
+    const seen = new Set<string>();
+    return options.filter((option) => {
+      if (seen.has(option.value)) return false;
+      seen.add(option.value);
+      return true;
+    });
   }
 
   function payloadFromForm(): Record<string, unknown> {
@@ -144,6 +157,26 @@ export function ResourceManager({
     };
   }, [fields]);
 
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) closeModal();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    const firstInput = modalRef.current?.querySelector<HTMLElement>("input:not([type='hidden']), select, textarea, button");
+    firstInput?.focus();
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeModal, modalOpen, submitting]);
+
   function startCreate() {
     setEditing(null);
     setForm(
@@ -187,10 +220,11 @@ export function ResourceManager({
       setSubmitting(false);
     }
 
-    setMessage(body.data && "key" in body.data ? `Created key: ${String(body.data.key)}` : "Saved");
+    const successMessage = body.data && "key" in body.data ? `Created key: ${String(body.data.key)}` : "Saved";
     setEditing(null);
     setForm({});
     await load();
+    setMessage(successMessage);
   }
 
   async function remove(id: string) {
@@ -234,91 +268,122 @@ export function ResourceManager({
         </a>
       </div>
 
-      {message ? (
+      {!modalOpen && message ? (
         <div className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-200">{message}</div>
       ) : null}
 
-      {(editing || Object.keys(form).length > 0) && (
-        <form action={endpoint} method="post" onSubmit={submit} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <input type="hidden" name="_redirect" value={returnPath} />
-          <div className="grid gap-4 md:grid-cols-2">
-            {visibleFields.map((field) => (
-              <label key={field.name} className="block text-sm text-zinc-300">
-                {field.label}
-                {field.type === "checkbox" ? (
-                  <>
-                    <input type="hidden" name={field.name} value="false" />
-                    <input
-                      type="checkbox"
-                      name={field.name}
-                      value="true"
-                      className="ml-3 align-middle"
-                      checked={Boolean(form[field.name])}
-                      onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.checked }))}
-                    />
-                  </>
-                ) : field.type === "select" ? (
-                  <select
-                    className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
-                    name={field.name}
-                    value={String(form[field.name] ?? "")}
-                    required={field.required}
-                    onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
-                  >
-                    <option value="">{field.emptyOptionLabel ?? "Select an option"}</option>
-                    {fieldOptions(field).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : field.type === "textarea" ? (
-                  <textarea
-                    className="mt-2 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
-                    name={field.name}
-                    value={String(form[field.name] ?? "")}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                    onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
-                  />
-                ) : (
-                  <input
-                    className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
-                    name={field.name}
-                    type={field.type ?? "text"}
-                    value={String(form[field.name] ?? "")}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                    onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
-                  />
-                )}
-                {field.help ? <span className="mt-1 block text-xs text-zinc-500">{field.help}</span> : null}
-              </label>
-            ))}
+      {modalOpen ? (
+        <div
+          className="resource-modal-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-6 backdrop-blur-sm md:items-center"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !submitting) closeModal();
+          }}
+        >
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resource-modal-title"
+            className="resource-modal-enter w-full max-w-3xl rounded-lg border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/40"
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-zinc-800 px-5 py-4">
+              <h3 id="resource-modal-title" className="text-lg font-semibold">
+                {editing ? `Edit ${title}` : `New ${title}`}
+              </h3>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={closeModal}
+                disabled={submitting}
+                className="grid h-8 w-8 place-items-center rounded-md border border-zinc-700 text-lg leading-none text-zinc-300 hover:border-zinc-500 hover:text-white disabled:opacity-50"
+              >
+                x
+              </button>
+            </div>
+            <form action={endpoint} method="post" onSubmit={submit} className="p-5">
+              <input type="hidden" name="_redirect" value={returnPath} />
+              {message ? (
+                <div className="mb-4 rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-200">
+                  {message}
+                </div>
+              ) : null}
+              <div className="grid gap-4 md:grid-cols-2">
+                {visibleFields.map((field) => (
+                  <label key={field.name} className="block text-sm text-zinc-300">
+                    {field.label}
+                    {field.type === "checkbox" ? (
+                      <span className="mt-2 flex min-h-10 items-center rounded-md border border-zinc-700 bg-zinc-950 px-3">
+                        <input type="hidden" name={field.name} value="false" />
+                        <input
+                          type="checkbox"
+                          name={field.name}
+                          value="true"
+                          className="h-4 w-4"
+                          checked={Boolean(form[field.name])}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, [field.name]: event.target.checked }))
+                          }
+                        />
+                      </span>
+                    ) : field.type === "select" ? (
+                      <select
+                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        name={field.name}
+                        value={String(form[field.name] ?? "")}
+                        required={field.required}
+                        onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
+                      >
+                        <option value="">{field.emptyOptionLabel ?? "Select an option"}</option>
+                        {fieldOptions(field).map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === "textarea" ? (
+                      <textarea
+                        className="mt-2 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        name={field.name}
+                        value={String(form[field.name] ?? "")}
+                        placeholder={field.placeholder}
+                        required={field.required}
+                        onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
+                      />
+                    ) : (
+                      <input
+                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        name={field.name}
+                        type={field.type ?? "text"}
+                        value={String(form[field.name] ?? "")}
+                        placeholder={field.placeholder}
+                        required={field.required}
+                        onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
+                      />
+                    )}
+                    {field.help ? <span className="mt-1 block text-xs text-zinc-500">{field.help}</span> : null}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  disabled={submitting}
+                  className="rounded-md border border-zinc-700 px-3 py-2 text-sm hover:border-zinc-500 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={submitting}
+                  className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
+                >
+                  {submitting ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="mt-4 flex gap-2">
-            <button
-              disabled={submitting}
-              className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
-            >
-              {submitting ? "Saving..." : "Save"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(null);
-                setForm({});
-              }}
-              className="rounded-md border border-zinc-700 px-3 py-2 text-sm"
-            >
-              Cancel
-            </button>
-            <a href={returnPath} className="rounded-md border border-zinc-700 px-3 py-2 text-sm">
-              Back
-            </a>
-          </div>
-        </form>
-      )}
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900">
         <table className="w-full text-left text-sm">

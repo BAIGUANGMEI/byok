@@ -8,6 +8,7 @@ const routes = [
   "/dashboard/sources",
   "/dashboard/keys",
   "/dashboard/logs",
+  "/dashboard/docs",
   "/dashboard/settings",
 ];
 

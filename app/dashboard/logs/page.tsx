@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BarChart, TrendChart } from "@/components/admin/metric-charts";
 import { ActivityTabs } from "@/components/admin/section-tabs";
+import { StatCard } from "@/components/stat-card";
 
 type LogRow = {
   id: string;
@@ -12,8 +14,28 @@ type LogRow = {
   errorType?: string | null;
   errorMessage?: string | null;
   totalTokens?: number | null;
+  totalLatencyMs?: number | null;
   estimatedCost?: string | null;
 };
+
+function numeric(value: string | number | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hourKey(value: string): string {
+  const date = new Date(value);
+  date.setMinutes(0, 0, 0);
+  return date.toISOString();
+}
+
+function hourLabel(value: string): string {
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+  });
+}
 
 export default function LogsPage() {
   const [rows, setRows] = useState<LogRow[]>([]);
@@ -32,6 +54,39 @@ export default function LogsPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  const requestCount = rows.length;
+  const successCount = rows.filter((row) => row.status === "success").length;
+  const errorCount = rows.filter((row) => row.status === "error").length;
+  const successRate = requestCount ? Math.round((successCount / requestCount) * 100) : 0;
+  const totalTokens = rows.reduce((sum, row) => sum + numeric(row.totalTokens), 0);
+  const totalCost = rows.reduce((sum, row) => sum + numeric(row.estimatedCost), 0);
+  const latencyRows = rows.filter((row) => row.totalLatencyMs !== null && row.totalLatencyMs !== undefined);
+  const avgLatency = latencyRows.length
+    ? Math.round(latencyRows.reduce((sum, row) => sum + numeric(row.totalLatencyMs), 0) / latencyRows.length)
+    : 0;
+  const hourlyRequests = Array.from(
+    rows.reduce((map, row) => {
+      const key = hourKey(row.createdAt);
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>()),
+  )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-12)
+    .map(([key, value]) => ({ label: hourLabel(key), value }));
+  const statusPoints = [
+    { label: "success", value: successCount, detail: `${successRate}%` },
+    { label: "error", value: errorCount, detail: `${100 - successRate}%` },
+  ];
+  const modelPoints = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.requestedModel, (map.get(row.requestedModel) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>()),
+  )
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value]) => ({ label, value }));
 
   return (
     <div className="space-y-4">
@@ -59,6 +114,19 @@ export default function LogsPage() {
         <button onClick={load} className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950">
           Filter
         </button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard label="Requests" value={requestCount} />
+        <StatCard label="Success rate" value={`${successRate}%`} />
+        <StatCard label="Errors" value={errorCount} />
+        <StatCard label="Tokens" value={totalTokens} />
+        <StatCard label="Cost" value={`$${totalCost.toFixed(4)}`} />
+        <StatCard label="Avg latency" value={`${avgLatency} ms`} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TrendChart title="Recent request activity" points={hourlyRequests} />
+        <BarChart title="Status split" points={statusPoints} />
+        <BarChart title="Models by request count" points={modelPoints} />
       </div>
       <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900">
         <table className="w-full text-left text-sm">

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encryptSecret, decryptSecret } from "@/lib/crypto/encrypt";
 import { createRelayKey, hashRelayKey } from "@/lib/crypto/hash";
 import { RelayError } from "@/lib/internal/errors";
@@ -7,9 +7,14 @@ import { parseAnthropicRequest } from "@/lib/protocols/anthropic/parse-request";
 import { formatAnthropicResponse } from "@/lib/protocols/anthropic/format-response";
 import { formatOpenAIResponse } from "@/lib/protocols/openai/format-response";
 import { parseOpenAIRequest } from "@/lib/protocols/openai/parse-request";
+import { internalMessagesToAnthropic } from "@/lib/providers/anthropic-compatible";
+import { fetchWithImageUrlFallback } from "@/lib/providers/image-url-fallback";
+import { buildProviderAuthHeaders } from "@/lib/providers/mimo";
+import { buildOpenAICompatibleBody, internalMessagesToOpenAI } from "@/lib/providers/openai-compatible";
 import { resolveModelFromRecords } from "@/lib/router/resolve-model";
 import { shouldFallback } from "@/lib/router/should-fallback";
 import type { InternalChatResponse } from "@/lib/internal/types";
+import type { ProviderInvokeContext } from "@/lib/providers/types";
 
 beforeEach(() => {
   process.env.AUTH_SECRET = "x".repeat(32);
@@ -17,6 +22,10 @@ beforeEach(() => {
   process.env.DATABASE_URL = "postgres://user:pass@localhost:5432/db";
   process.env.ADMIN_EMAIL = "admin@example.com";
   process.env.ADMIN_PASSWORD = "password";
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("protocol parsing and formatting", () => {
@@ -49,6 +58,225 @@ describe("protocol parsing and formatting", () => {
     expect(request.messages[0]?.content[0]).toEqual({ type: "text", text: "hello" });
   });
 
+  it("preserves Anthropic image sources for upstream Anthropic requests", () => {
+    const request = parseAnthropicRequest({
+      model: "vision",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "abc123" },
+            },
+            { type: "text", text: "Describe this image." },
+          ],
+        },
+      ],
+      max_tokens: 64,
+    });
+
+    expect(request.messages[0]?.content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", mediaType: "image/png", data: "abc123" },
+    });
+    expect(internalMessagesToAnthropic(request.messages)[0]?.content).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "abc123" },
+      },
+      { type: "text", text: "Describe this image." },
+    ]);
+  });
+
+  it("converts OpenAI image URLs to Anthropic image sources", () => {
+    const request = parseOpenAIRequest({
+      model: "vision",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            {
+              type: "image_url",
+              image_url: { url: "data:image/jpeg;base64,abc123" },
+            },
+            {
+              type: "image_url",
+              image_url: { url: "https://example.com/image.png" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(internalMessagesToAnthropic(request.messages)[0]?.content).toEqual([
+      { type: "text", text: "Describe this image." },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: "abc123" },
+      },
+      {
+        type: "image",
+        source: { type: "url", url: "https://example.com/image.png" },
+      },
+    ]);
+  });
+
+  it("converts Anthropic image sources to OpenAI image URLs when possible", () => {
+    const request = parseAnthropicRequest({
+      model: "vision",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/image.webp" },
+            },
+          ],
+        },
+      ],
+      max_tokens: 64,
+    });
+
+    expect(internalMessagesToOpenAI(request.messages)[0]?.content).toEqual([
+      {
+        type: "image_url",
+        image_url: { url: "https://example.com/image.webp" },
+      },
+    ]);
+  });
+
+  it("uses MiMo max_completion_tokens for OpenAI-compatible upstream requests", () => {
+    const request = parseAnthropicRequest({
+      model: "mimo-v2.5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/image.jpg" },
+            },
+            { type: "text", text: "Describe this image." },
+          ],
+        },
+      ],
+      max_tokens: 1024,
+    });
+    const context: ProviderInvokeContext = {
+      source: {
+        id: "source",
+        name: "MiMo",
+        providerType: "mimo",
+        protocol: "openai_chat",
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        authType: "api-key",
+        apiKeyEncrypted: "encrypted",
+        timeoutMs: 60000,
+      },
+      model: {
+        id: "model",
+        publicModelName: "mimo-v2.5",
+        upstreamModelName: "mimo-v2.5",
+        sourceId: "source",
+        supportsStreaming: true,
+        supportsVision: true,
+      },
+      apiKey: "key",
+      timeoutMs: 60000,
+    };
+
+    const body = buildOpenAICompatibleBody(request, context, false, false);
+    expect(body.max_completion_tokens).toBe(1024);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: "https://example.com/image.jpg" },
+          },
+          { type: "text", text: "Describe this image." },
+        ],
+      },
+    ]);
+  });
+
+  it("detects MiMo max_completion_tokens from upstream model names", () => {
+    const request = parseOpenAIRequest({
+      model: "mimo-v2.5",
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 128,
+    });
+    const context: ProviderInvokeContext = {
+      source: {
+        id: "source",
+        name: "Custom",
+        providerType: "openai_compatible",
+        protocol: "openai_chat",
+        baseUrl: "https://example.com/v1",
+        authType: "bearer",
+        apiKeyEncrypted: "encrypted",
+        timeoutMs: 60000,
+      },
+      model: {
+        id: "model",
+        publicModelName: "mimo-v2.5",
+        upstreamModelName: "mimo-v2.5",
+        sourceId: "source",
+        supportsStreaming: true,
+      },
+      apiKey: "key",
+      timeoutMs: 60000,
+    };
+
+    const body = buildOpenAICompatibleBody(request, context, false, false);
+    expect(body.max_completion_tokens).toBe(128);
+    expect(body.max_tokens).toBeUndefined();
+    expect(buildProviderAuthHeaders(context)).toEqual({ "api-key": "key" });
+  });
+
+  it("tries image URLs first and falls back to base64 after provider rejection", async () => {
+    const request = parseAnthropicRequest({
+      model: "mimo-v2.5",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/image.jpg" },
+            },
+          ],
+        },
+      ],
+      max_tokens: 128,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } })),
+    );
+    const send = vi
+      .fn<(upstreamRequest: typeof request) => Promise<Response>>()
+      .mockResolvedValueOnce(new Response("bad image url", { status: 400 }))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    const response = await fetchWithImageUrlFallback(request, 60000, send);
+    expect(response.ok).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0]?.[0].messages[0]?.content[0]).toEqual({
+      type: "image",
+      source: { type: "url", url: "https://example.com/image.jpg" },
+    });
+    expect(send.mock.calls[1]?.[0].messages[0]?.content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", mediaType: "image/jpeg", data: "AQID" },
+    });
+  });
+
   it("formats OpenAI and Anthropic responses", () => {
     const response: InternalChatResponse = {
       id: "msg_1",
@@ -67,6 +295,28 @@ describe("protocol parsing and formatting", () => {
     expect(formatAnthropicResponse(response, "coding")).toMatchObject({
       stop_reason: "max_tokens",
       usage: { input_tokens: 1, output_tokens: 2 },
+    });
+  });
+
+  it("exposes one internal response through both client API formats", () => {
+    const response: InternalChatResponse = {
+      id: "msg_dual",
+      model: "coding",
+      resolvedModel: "coding",
+      sourceId: "source",
+      upstreamModel: "upstream",
+      content: [{ type: "text", text: "same model, two API shapes" }],
+      finishReason: "stop",
+      usage: { inputTokens: 5, outputTokens: 6, totalTokens: 11 },
+    };
+
+    expect(formatOpenAIResponse(response, "coding")).toMatchObject({
+      model: "coding",
+      choices: [{ message: { content: "same model, two API shapes" } }],
+    });
+    expect(formatAnthropicResponse(response, "coding")).toMatchObject({
+      model: "coding",
+      content: [{ type: "text", text: "same model, two API shapes" }],
     });
   });
 });

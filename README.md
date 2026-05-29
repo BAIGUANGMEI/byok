@@ -8,6 +8,7 @@ Personal AI API relay gateway that exposes OpenAI-compatible and Anthropic-compa
 - Provider source, model mapping, alias, fallback route, and relay key management.
 - OpenAI-compatible `GET /v1/models` and `POST /v1/chat/completions`.
 - Anthropic-compatible `POST /v1/messages`.
+- Image input relay for OpenAI `image_url` and Anthropic `image` content blocks.
 - Non-streaming and SSE streaming relay.
 - Provider API keys encrypted with AES-256-GCM.
 - Relay API keys stored only as HMAC-SHA256 hashes.
@@ -82,9 +83,18 @@ For public deployment, use a strong password and long random `AUTH_SECRET`.
 
 1. Go to `/dashboard/sources`.
 2. Create a source using a preset as a reference.
-3. Set `protocol` to `openai_chat` or `anthropic_messages`.
+3. Set `Upstream API format` to `openai_chat` or `anthropic_messages`. This describes how the gateway calls the upstream provider, not which client API is exposed.
 4. Set `authType` to `bearer`, `x-api-key`, or `api-key`.
 5. Enter the upstream API key. It is encrypted before storage and is never returned by API responses.
+
+Every mapped model is exposed through both relay API styles:
+
+- OpenAI-compatible `POST /v1/chat/completions`
+- Anthropic-compatible `POST /v1/messages`
+
+For example, a public model named `coding` can be called from either OpenAI clients or Anthropic clients. The gateway parses the incoming request, converts it into the internal request shape, calls the configured upstream source format, and formats the response back to the client API style you used.
+
+Image inputs are converted between OpenAI-compatible `image_url` blocks and Anthropic-compatible `image.source` blocks where the upstream format supports them. Anthropic `base64`, `url`, and `file` image sources are preserved for Anthropic-compatible upstream providers.
 
 ## Add a Model
 
@@ -93,6 +103,8 @@ For public deployment, use a strong password and long random `AUTH_SECRET`.
 3. Use a public model name such as `deepseek/deepseek-chat` or `coding`.
 4. Set the upstream model name exactly as the provider expects.
 5. Optionally set prices per 1M tokens for cost estimates.
+
+The public model name is protocol-agnostic at the relay edge. You do not need to create separate `coding-openai` and `coding-anthropic` entries unless you want different routing or upstream models.
 
 ## Create a Relay API Key
 
@@ -179,7 +191,7 @@ curl -N http://localhost:3000/v1/messages \
 
 - Route handlers use the Node.js runtime.
 - Streaming uses SSE over Web Streams.
-- WebSocket, file uploads, images, audio, embeddings, billing, teams, and public registration are intentionally out of scope.
+- WebSocket, file upload endpoints, audio, embeddings, billing, teams, and public registration are intentionally out of scope.
 - Long streaming responses are still subject to Vercel function limits.
 
 ## Verification

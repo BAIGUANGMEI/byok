@@ -1,9 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BarChart, TrendChart } from "@/components/admin/metric-charts";
 import { ActivityTabs } from "@/components/admin/section-tabs";
 
 type UsageRow = Record<string, string | number | null>;
+
+function numeric(value: string | number | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function labelFor(row: UsageRow, groupBy: string): string {
+  const value = groupBy === "model" ? row.model : groupBy === "source" ? row.sourceId : row.date;
+  return String(value || "unknown");
+}
+
+function shortDate(value: string | number | null | undefined): string {
+  if (!value) return "";
+  return new Date(`${String(value)}T00:00:00.000Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 export default function UsagePage() {
   const [rows, setRows] = useState<UsageRow[]>([]);
@@ -20,6 +36,22 @@ export default function UsagePage() {
   }, []);
 
   const keys = rows[0] ? Object.keys(rows[0]) : [];
+  const orderedRows = groupBy === "day" ? [...rows].reverse() : rows;
+  const requestPoints = orderedRows.map((row) => ({
+    label: groupBy === "day" ? shortDate(row.date) : labelFor(row, groupBy),
+    value: numeric(row.requestCount),
+  }));
+  const successPoints = orderedRows.map((row) => {
+    const requests = numeric(row.requestCount);
+    return {
+      label: groupBy === "day" ? shortDate(row.date) : labelFor(row, groupBy),
+      value: requests ? Math.round((numeric(row.successCount) / requests) * 100) : 0,
+    };
+  });
+  const tokenPoints = orderedRows.map((row) => ({
+    label: groupBy === "day" ? shortDate(row.date) : labelFor(row, groupBy),
+    value: numeric(row.totalTokens),
+  }));
 
   return (
     <div className="space-y-4">
@@ -43,6 +75,21 @@ export default function UsagePage() {
             {value}
           </button>
         ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {groupBy === "day" ? (
+          <>
+            <TrendChart title="Requests" points={requestPoints} />
+            <TrendChart title="Success rate" points={successPoints} formatValue={(value) => `${value}%`} tone="emerald" />
+            <TrendChart title="Tokens" points={tokenPoints} tone="amber" />
+          </>
+        ) : (
+          <>
+            <BarChart title="Requests" points={requestPoints} />
+            <BarChart title="Tokens" points={tokenPoints} />
+            <BarChart title="Success rate" points={successPoints} formatValue={(value) => `${value}%`} />
+          </>
+        )}
       </div>
       <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900">
         <table className="w-full text-left text-sm">

@@ -1,4 +1,5 @@
 import { RelayError, toInternalError } from "@/lib/internal/errors";
+import { imageSourceToOpenAIUrl } from "@/lib/internal/images";
 import type {
   InternalChatRequest,
   InternalChatResponse,
@@ -9,12 +10,13 @@ import type {
 } from "@/lib/internal/types";
 import { parseSse } from "@/lib/sse/parse-sse";
 import {
-  buildAuthHeaders,
   fetchWithTimeout,
   joinUrl,
   mapFinishReason,
   throwProviderError,
 } from "@/lib/providers/common";
+import { fetchWithImageUrlFallback } from "@/lib/providers/image-url-fallback";
+import { buildProviderAuthHeaders, isMimoContext } from "@/lib/providers/mimo";
 import type { ProviderAdapter, ProviderInvokeContext } from "@/lib/providers/types";
 
 type OpenAIChoice = {
@@ -43,7 +45,12 @@ function textFromContent(content: InternalContentBlock[]): string | Array<Record
   }
   return content.map((block) => {
     if (block.type === "text") return { type: "text", text: block.text };
-    if (block.type === "image_url") return { type: "image_url", image_url: { url: block.imageUrl } };
+    if (block.type === "image") {
+      const url = imageSourceToOpenAIUrl(block.source);
+      if (url) return { type: "image_url", image_url: { url } };
+      const label = block.source.type === "file" ? `[image file: ${block.source.fileId}]` : "[image]";
+      return { type: "text", text: label };
+    }
     return { type: "text", text: JSON.stringify(block.content) };
   });
 }
@@ -63,6 +70,35 @@ function toOpenAIMessages(request: InternalChatRequest): Array<Record<string, un
   return messages;
 }
 
+function usesMaxCompletionTokens(context: ProviderInvokeContext): boolean {
+  return isMimoContext(context);
+}
+
+export function buildOpenAICompatibleBody(
+  request: InternalChatRequest,
+  context: ProviderInvokeContext,
+  stream: boolean,
+  includeUsage: boolean,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: context.model.upstreamModelName,
+    messages: toOpenAIMessages(request),
+    stream,
+  };
+  if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (request.topP !== undefined) body.top_p = request.topP;
+  if (request.maxTokens !== undefined) {
+    if (usesMaxCompletionTokens(context)) body.max_completion_tokens = request.maxTokens;
+    else body.max_tokens = request.maxTokens;
+  }
+  if (request.stop) body.stop = request.stop;
+  if (request.tools) body.tools = request.tools;
+  if (request.toolChoice) body.tool_choice = request.toolChoice;
+  if (request.responseFormat) body.response_format = request.responseFormat;
+  if (stream && includeUsage) body.stream_options = { include_usage: true };
+  return body;
+}
+
 function toUsage(usage?: OpenAIResponse["usage"]): InternalUsage | undefined {
   if (!usage) return undefined;
   return {
@@ -78,32 +114,21 @@ async function requestJson(
   stream: boolean,
   includeUsage: boolean,
 ): Promise<Response> {
-  const body: Record<string, unknown> = {
-    model: context.model.upstreamModelName,
-    messages: toOpenAIMessages(request),
-    stream,
-  };
-  if (request.temperature !== undefined) body.temperature = request.temperature;
-  if (request.topP !== undefined) body.top_p = request.topP;
-  if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens;
-  if (request.stop) body.stop = request.stop;
-  if (request.tools) body.tools = request.tools;
-  if (request.toolChoice) body.tool_choice = request.toolChoice;
-  if (request.responseFormat) body.response_format = request.responseFormat;
-  if (stream && includeUsage) body.stream_options = { include_usage: true };
-
-  return fetchWithTimeout(
-    joinUrl(context.source.baseUrl, "/chat/completions"),
-    {
-      method: "POST",
-      headers: {
-        ...buildAuthHeaders(context.source.authType, context.apiKey),
-        "content-type": "application/json",
+  return fetchWithImageUrlFallback(request, context.timeoutMs, (upstreamRequest) => {
+    const body = buildOpenAICompatibleBody(upstreamRequest, context, stream, includeUsage);
+    return fetchWithTimeout(
+      joinUrl(context.source.baseUrl, "/chat/completions"),
+      {
+        method: "POST",
+        headers: {
+          ...buildProviderAuthHeaders(context),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    },
-    context.timeoutMs,
-  );
+      context.timeoutMs,
+    );
+  });
 }
 
 export class OpenAICompatibleAdapter implements ProviderAdapter {
@@ -174,7 +199,7 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
   async testConnection(context: ProviderInvokeContext): Promise<{ ok: boolean; message: string }> {
     const response = await fetchWithTimeout(
       joinUrl(context.source.baseUrl, "/models"),
-      { headers: buildAuthHeaders(context.source.authType, context.apiKey) },
+      { headers: buildProviderAuthHeaders(context) },
       context.timeoutMs,
     );
     return { ok: response.ok, message: response.ok ? "Connection ok" : `HTTP ${response.status}` };

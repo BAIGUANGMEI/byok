@@ -19,6 +19,7 @@ const navItems: readonly NavItem[] = [
   },
   { label: "Keys", href: "/dashboard/keys", paths: ["/dashboard/keys"] },
   { label: "Activity", href: "/dashboard/logs", paths: ["/dashboard/logs", "/dashboard/usage"] },
+  { label: "Docs", href: "/dashboard/docs", paths: ["/dashboard/docs"] },
   { label: "Settings", href: "/dashboard/settings", paths: ["/dashboard/settings"] },
 ] as const;
 

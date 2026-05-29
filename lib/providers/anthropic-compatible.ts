@@ -1,19 +1,22 @@
 import { RelayError, toInternalError } from "@/lib/internal/errors";
+import { imageSourceToAnthropicSource } from "@/lib/internal/images";
 import type {
   InternalChatRequest,
   InternalChatResponse,
   InternalContentBlock,
+  InternalMessage,
   InternalStreamEvent,
   InternalUsage,
 } from "@/lib/internal/types";
 import { parseSse } from "@/lib/sse/parse-sse";
 import {
-  buildAuthHeaders,
   fetchWithTimeout,
   joinUrl,
   mapFinishReason,
   throwProviderError,
 } from "@/lib/providers/common";
+import { fetchWithImageUrlFallback } from "@/lib/providers/image-url-fallback";
+import { buildProviderAuthHeaders } from "@/lib/providers/mimo";
 import type { ProviderAdapter, ProviderInvokeContext } from "@/lib/providers/types";
 
 type AnthropicResponse = {
@@ -43,7 +46,7 @@ function contentToAnthropic(content: InternalContentBlock[]): string | Array<Rec
   }
   return content.map((block) => {
     if (block.type === "text") return { type: "text", text: block.text };
-    if (block.type === "image_url") return { type: "text", text: `[image: ${block.imageUrl}]` };
+    if (block.type === "image") return { type: "image", source: imageSourceToAnthropicSource(block.source) };
     return { type: "text", text: JSON.stringify(block.content) };
   });
 }
@@ -62,10 +65,7 @@ function toUsage(usage?: AnthropicResponse["usage"]): InternalUsage | undefined 
 function buildBody(request: InternalChatRequest, context: ProviderInvokeContext, stream: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: context.model.upstreamModelName,
-    messages: request.messages.map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content: contentToAnthropic(message.content),
-    })),
+    messages: internalMessagesToAnthropic(request.messages),
     max_tokens: request.maxTokens ?? 1024,
     stream,
   };
@@ -83,18 +83,20 @@ async function requestAnthropic(
   context: ProviderInvokeContext,
   stream: boolean,
 ): Promise<Response> {
-  return fetchWithTimeout(
-    joinUrl(context.source.baseUrl, "/messages"),
-    {
-      method: "POST",
-      headers: {
-        ...buildAuthHeaders(context.source.authType, context.apiKey),
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+  return fetchWithImageUrlFallback(request, context.timeoutMs, (upstreamRequest) =>
+    fetchWithTimeout(
+      joinUrl(context.source.baseUrl, "/messages"),
+      {
+        method: "POST",
+        headers: {
+          ...buildProviderAuthHeaders(context),
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(buildBody(upstreamRequest, context, stream)),
       },
-      body: JSON.stringify(buildBody(request, context, stream)),
-    },
-    context.timeoutMs,
+      context.timeoutMs,
+    ),
   );
 }
 
@@ -191,7 +193,7 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
       joinUrl(context.source.baseUrl, "/models"),
       {
         headers: {
-          ...buildAuthHeaders(context.source.authType, context.apiKey),
+          ...buildProviderAuthHeaders(context),
           "anthropic-version": "2023-06-01",
         },
       },
@@ -203,4 +205,11 @@ export class AnthropicCompatibleAdapter implements ProviderAdapter {
   normalizeError(error: unknown) {
     return toInternalError(error);
   }
+}
+
+export function internalMessagesToAnthropic(messages: InternalMessage[]): Array<Record<string, unknown>> {
+  return messages.map((message) => ({
+    role: message.role === "assistant" ? "assistant" : "user",
+    content: contentToAnthropic(message.content),
+  }));
 }

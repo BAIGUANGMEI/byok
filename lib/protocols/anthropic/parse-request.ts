@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { imageSourceFromAnthropicSource } from "@/lib/internal/images";
 import { RelayError } from "@/lib/internal/errors";
 import type { InternalChatRequest, InternalContentBlock, InternalMessage } from "@/lib/internal/types";
 
@@ -13,7 +14,8 @@ function parseAnthropicContent(content: unknown): InternalContentBlock[] {
       return [{ type: "text", text: block.text }];
     }
     if (block.type === "image" && typeof block.source === "object") {
-      return [{ type: "image_url", imageUrl: JSON.stringify(block.source) }];
+      const source = imageSourceFromAnthropicSource(block.source);
+      if (source) return [{ type: "image", source }];
     }
     return [];
   });

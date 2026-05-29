@@ -3,9 +3,14 @@ export type OutputProtocol = "openai" | "anthropic";
 
 export type InternalRole = "system" | "user" | "assistant" | "tool";
 
+export type InternalImageSource =
+  | { type: "url"; url: string }
+  | { type: "base64"; mediaType: string; data: string }
+  | { type: "file"; fileId: string };
+
 export type InternalContentBlock =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }
+  | { type: "image"; source: InternalImageSource }
   | { type: "tool_result"; toolCallId: string; content: unknown };
 
 export type InternalMessage = {

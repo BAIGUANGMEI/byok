@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { imageSourceFromOpenAIUrl } from "@/lib/internal/images";
 import { RelayError } from "@/lib/internal/errors";
 import type { InternalChatRequest, InternalContentBlock, InternalMessage } from "@/lib/internal/types";
 
@@ -21,7 +22,7 @@ function parseContent(content: unknown): InternalContentBlock[] {
     }
     if (block.type === "image_url") {
       const image = block.image_url as { url?: string } | undefined;
-      if (image?.url) return [{ type: "image_url", imageUrl: image.url }];
+      if (image?.url) return [{ type: "image", source: imageSourceFromOpenAIUrl(image.url) }];
     }
     return [];
   });

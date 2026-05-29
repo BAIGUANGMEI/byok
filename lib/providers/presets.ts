@@ -18,7 +18,7 @@ export const PROVIDER_PRESETS = [
     label: "Xiaomi MiMo OpenAI-compatible",
     protocol: "openai_chat",
     baseUrl: "https://api.xiaomimimo.com/v1",
-    authType: "bearer",
+    authType: "api-key",
   },
   {
     providerType: "openai_compatible",

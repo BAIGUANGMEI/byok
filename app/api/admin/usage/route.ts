@@ -21,6 +21,8 @@ export async function GET(request: Request): Promise<Response> {
         .select({
           model: dailyUsage.model,
           requestCount: sql<number>`sum(${dailyUsage.requestCount})`,
+          successCount: sql<number>`sum(${dailyUsage.successCount})`,
+          errorCount: sql<number>`sum(${dailyUsage.errorCount})`,
           totalTokens: sql<number>`sum(${dailyUsage.totalTokens})`,
           estimatedCost: sql<string>`sum(${dailyUsage.estimatedCost})`,
         })
@@ -36,6 +38,8 @@ export async function GET(request: Request): Promise<Response> {
         .select({
           sourceId: dailyUsage.sourceId,
           requestCount: sql<number>`sum(${dailyUsage.requestCount})`,
+          successCount: sql<number>`sum(${dailyUsage.successCount})`,
+          errorCount: sql<number>`sum(${dailyUsage.errorCount})`,
           totalTokens: sql<number>`sum(${dailyUsage.totalTokens})`,
           estimatedCost: sql<string>`sum(${dailyUsage.estimatedCost})`,
         })
@@ -46,7 +50,22 @@ export async function GET(request: Request): Promise<Response> {
       return Response.json({ data: rows });
     }
 
-    const rows = await getDb().select().from(dailyUsage).where(where).orderBy(desc(dailyUsage.date)).limit(100);
+    const rows = await getDb()
+      .select({
+        date: dailyUsage.date,
+        requestCount: sql<number>`sum(${dailyUsage.requestCount})`,
+        successCount: sql<number>`sum(${dailyUsage.successCount})`,
+        errorCount: sql<number>`sum(${dailyUsage.errorCount})`,
+        inputTokens: sql<number>`sum(${dailyUsage.inputTokens})`,
+        outputTokens: sql<number>`sum(${dailyUsage.outputTokens})`,
+        totalTokens: sql<number>`sum(${dailyUsage.totalTokens})`,
+        estimatedCost: sql<string>`sum(${dailyUsage.estimatedCost})`,
+      })
+      .from(dailyUsage)
+      .where(where)
+      .groupBy(dailyUsage.date)
+      .orderBy(desc(dailyUsage.date))
+      .limit(100);
     return Response.json({ data: rows });
   });
 }

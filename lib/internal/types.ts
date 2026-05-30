@@ -8,16 +8,26 @@ export type InternalImageSource =
   | { type: "base64"; mediaType: string; data: string }
   | { type: "file"; fileId: string };
 
+export type InternalToolCall = {
+  id: string;
+  name: string;
+  arguments: unknown;
+};
+
 export type InternalContentBlock =
-  | { type: "text"; text: string }
-  | { type: "image"; source: InternalImageSource }
-  | { type: "tool_result"; toolCallId: string; content: unknown };
+  | { type: "text"; text: string; raw?: Record<string, unknown> }
+  | { type: "image"; source: InternalImageSource; raw?: Record<string, unknown> }
+  | { type: "tool_result"; toolCallId: string; content: unknown; raw?: Record<string, unknown> }
+  | { type: "raw"; content: Record<string, unknown> };
 
 export type InternalMessage = {
   role: InternalRole;
   content: InternalContentBlock[];
   name?: string;
   toolCallId?: string;
+  toolCalls?: InternalToolCall[];
+  reasoningContent?: string;
+  raw?: Record<string, unknown>;
 };
 
 export type InternalChatRequest = {
@@ -35,6 +45,7 @@ export type InternalChatRequest = {
   tools?: unknown[];
   toolChoice?: unknown;
   responseFormat?: unknown;
+  extraBody?: Record<string, unknown>;
   rawRequest?: unknown;
 };
 
@@ -42,6 +53,8 @@ export type InternalUsage = {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  inputCacheHitTokens?: number;
+  inputCacheMissTokens?: number;
 };
 
 export type InternalFinishReason =
@@ -61,8 +74,10 @@ export type InternalChatResponse = {
     | { type: "text"; text: string }
     | { type: "tool_call"; id: string; name: string; arguments: unknown }
   >;
+  reasoningContent?: string;
   finishReason: InternalFinishReason;
   usage?: InternalUsage;
+  logprobs?: unknown;
   providerRequestId?: string;
 };
 
@@ -88,6 +103,7 @@ export type InternalError = {
 
 export type InternalStreamEvent =
   | { type: "message_start"; id: string; model: string }
+  | { type: "reasoning_delta"; index: number; text: string }
   | { type: "text_delta"; index: number; text: string }
   | { type: "tool_call_start"; index: number; id: string; name: string }
   | { type: "tool_call_delta"; index: number; argumentsDelta: string }

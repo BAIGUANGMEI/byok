@@ -38,6 +38,7 @@ export type ProviderInvokeContext = {
   source: ProviderSourceRecord;
   model: ModelMappingRecord;
   apiKey: string;
+  extraHeaders?: Record<string, string>;
   timeoutMs: number;
 };
 

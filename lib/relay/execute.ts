@@ -3,7 +3,7 @@ import type { RelayApiKey } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { RelayError, toInternalError } from "@/lib/internal/errors";
 import type { InternalChatRequest, InternalChatResponse, InternalStreamEvent, InternalUsage } from "@/lib/internal/types";
-import { estimateCost, normalizeUsage, recordUsageAndLog } from "@/lib/internal/usage";
+import { estimateCost, mergeUsage, normalizeUsage, recordUsageAndLog } from "@/lib/internal/usage";
 import { formatAnthropicStreamEvent } from "@/lib/protocols/anthropic/format-stream";
 import { formatOpenAIStreamEvent, openAIDoneEvent } from "@/lib/protocols/openai/format-stream";
 import { getProviderAdapter } from "@/lib/providers/registry";
@@ -58,6 +58,29 @@ function responseText(response: InternalChatResponse): string {
     .join("");
 }
 
+function decryptExtraHeaders(encrypted?: string | null): Record<string, string> | undefined {
+  if (!encrypted) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decryptSecret(encrypted)) as unknown;
+  } catch {
+    throw new RelayError({
+      type: "invalid_request_error",
+      message: "Provider extra headers must be a JSON object.",
+      status: 400,
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const headers = Object.fromEntries(
+    Object.entries(parsed)
+      .filter((entry): entry is [string, string | number | boolean] =>
+        ["string", "number", "boolean"].includes(typeof entry[1]),
+      )
+      .map(([key, value]) => [key, String(value)]),
+  );
+  return Object.keys(headers).length ? headers : undefined;
+}
+
 async function invokeCandidate(
   request: InternalChatRequest,
   candidate: ResolveCandidate,
@@ -68,6 +91,7 @@ async function invokeCandidate(
     source: candidate.source,
     model: candidate.model,
     apiKey: decryptSecret(candidate.source.apiKeyEncrypted),
+    extraHeaders: decryptExtraHeaders(candidate.source.extraHeadersEncrypted),
     timeoutMs: candidate.source.timeoutMs || getEnv().RELAY_DEFAULT_TIMEOUT_MS,
   });
 }
@@ -158,6 +182,7 @@ async function openStreamCandidate(
         source: candidate.source,
         model: candidate.model,
         apiKey: decryptSecret(candidate.source.apiKeyEncrypted),
+        extraHeaders: decryptExtraHeaders(candidate.source.extraHeadersEncrypted),
         timeoutMs: candidate.source.timeoutMs || getEnv().RELAY_DEFAULT_TIMEOUT_MS,
       });
       return { candidate, stream };
@@ -216,7 +241,10 @@ export async function createRelayStreamResponse(
             outputText += event.text;
             firstTokenLatencyMs ??= Date.now() - startedAt;
           }
-          if (event.type === "usage") usageFromStream = event.usage;
+          if (event.type === "reasoning_delta" || event.type === "tool_call_start" || event.type === "tool_call_delta") {
+            firstTokenLatencyMs ??= Date.now() - startedAt;
+          }
+          if (event.type === "usage") usageFromStream = mergeUsage(usageFromStream, event.usage);
 
           const chunk =
             protocol === "openai"

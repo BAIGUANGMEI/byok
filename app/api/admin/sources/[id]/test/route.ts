@@ -11,6 +11,29 @@ export const runtime = "nodejs";
 
 type Context = { params: Promise<{ id: string }> };
 
+function decryptExtraHeaders(encrypted?: string | null): Record<string, string> | undefined {
+  if (!encrypted) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decryptSecret(encrypted)) as unknown;
+  } catch {
+    throw new RelayError({
+      type: "invalid_request_error",
+      message: "Provider extra headers must be a JSON object.",
+      status: 400,
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const headers = Object.fromEntries(
+    Object.entries(parsed)
+      .filter((entry): entry is [string, string | number | boolean] =>
+        ["string", "number", "boolean"].includes(typeof entry[1]),
+      )
+      .map(([key, value]) => [key, String(value)]),
+  );
+  return Object.keys(headers).length ? headers : undefined;
+}
+
 export async function POST(_request: Request, context: Context): Promise<Response> {
   return adminRoute(async () => {
     const { id } = await context.params;
@@ -36,6 +59,7 @@ export async function POST(_request: Request, context: Context): Promise<Respons
         supportsStreaming: true,
       } satisfies ModelMappingRecord,
       apiKey: decryptSecret(source.apiKeyEncrypted),
+      extraHeaders: decryptExtraHeaders(source.extraHeadersEncrypted),
       timeoutMs: source.timeoutMs,
     });
     await getDb()

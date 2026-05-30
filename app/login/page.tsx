@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PreferenceControls } from "@/components/preference-controls";
+import { usePreferences } from "@/components/preferences-provider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { text } = usePreferences();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -12,9 +15,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("error") === "invalid") {
-      setError("Invalid email or password");
+      setError(text({ en: "Invalid email or password", zh: "邮箱或密码不正确" }));
     }
-  }, []);
+  }, [text]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,7 +31,7 @@ export default function LoginPage() {
     setLoading(false);
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-      setError(body?.error?.message ?? "Login failed");
+      setError(body?.error?.message ?? text({ en: "Login failed", zh: "登录失败" }));
       return;
     }
     router.push("/dashboard");
@@ -36,19 +39,24 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
+    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 py-8 text-zinc-100">
       <form
         action="/api/admin/login"
         method="post"
         onSubmit={submit}
         className="w-full max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-6 shadow-xl"
       >
-        <h1 className="text-xl font-semibold">AI Relay Gateway</h1>
-        <p className="mt-1 text-sm text-zinc-400">Sign in with the single admin account.</p>
+        <div className="mb-5 flex justify-end">
+          <PreferenceControls />
+        </div>
+        <h1 className="text-xl font-semibold">BYOK</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          {text({ en: "Sign in with the single admin account.", zh: "使用单一管理员账号登录。" })}
+        </p>
         <label className="mt-6 block text-sm font-medium text-zinc-300">
-          Email
+          {text({ en: "Email", zh: "邮箱" })}
           <input
-            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+            className="codex-focus mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             type="email"
@@ -57,9 +65,9 @@ export default function LoginPage() {
           />
         </label>
         <label className="mt-4 block text-sm font-medium text-zinc-300">
-          Password
+          {text({ en: "Password", zh: "密码" })}
           <input
-            className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+            className="codex-focus mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             type="password"
@@ -70,10 +78,10 @@ export default function LoginPage() {
         {error ? <p className="mt-4 rounded-md bg-red-950 px-3 py-2 text-sm text-red-200">{error}</p> : null}
         <button
           type="submit"
-          className="mt-6 w-full rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
+          className="codex-button mt-6 w-full rounded-md px-4 py-2 text-sm font-semibold"
           disabled={loading}
         >
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? text({ en: "Signing in...", zh: "登录中..." }) : text({ en: "Sign in", zh: "登录" })}
         </button>
       </form>
     </main>

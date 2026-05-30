@@ -2,31 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { usePreferences } from "@/components/preferences-provider";
+import type { LocalizedText } from "@/lib/i18n";
 
 type SectionTab = {
-  label: string;
+  label: LocalizedText;
   href: string;
 };
 
 const providerTabs: SectionTab[] = [
-  { label: "Sources", href: "/dashboard/sources" },
-  { label: "Models", href: "/dashboard/models" },
-  { label: "Aliases", href: "/dashboard/aliases" },
-  { label: "Routing", href: "/dashboard/routing" },
+  { label: { en: "Sources", zh: "来源" }, href: "/dashboard/sources" },
+  { label: { en: "Models", zh: "模型" }, href: "/dashboard/models" },
+  { label: { en: "Aliases", zh: "别名" }, href: "/dashboard/aliases" },
+  { label: { en: "Routing", zh: "路由" }, href: "/dashboard/routing" },
 ];
 
 const activityTabs: SectionTab[] = [
-  { label: "Logs", href: "/dashboard/logs" },
-  { label: "Usage", href: "/dashboard/usage" },
+  { label: { en: "Logs", zh: "日志" }, href: "/dashboard/logs" },
+  { label: { en: "Usage", zh: "用量" }, href: "/dashboard/usage" },
 ];
 
-function SectionTabs({ label, tabs }: { label: string; tabs: SectionTab[] }) {
+function SectionTabs({ label, tabs }: { label: LocalizedText; tabs: SectionTab[] }) {
   const pathname = usePathname();
+  const { text } = usePreferences();
+  const sectionLabel = text(label);
 
   return (
     <div className="flex flex-col gap-3 border-b border-zinc-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xs font-semibold uppercase text-zinc-500">{label}</p>
-      <nav className="flex flex-wrap gap-2" aria-label={`${label} tabs`}>
+      <p className="text-xs font-semibold uppercase text-zinc-500">{sectionLabel}</p>
+      <nav className="flex flex-wrap gap-2" aria-label={`${sectionLabel} tabs`}>
         {tabs.map((tab) => {
           const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (
@@ -36,11 +40,11 @@ function SectionTabs({ label, tabs }: { label: string; tabs: SectionTab[] }) {
               aria-current={active ? "page" : undefined}
               className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
                 active
-                  ? "border-cyan-300 bg-zinc-100 text-zinc-950"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-cyan-500 hover:text-cyan-200"
+                  ? "codex-selected"
+                  : "codex-hover border-zinc-800 bg-zinc-900 text-zinc-300"
               }`}
             >
-              {tab.label}
+              {text(tab.label)}
             </Link>
           );
         })}
@@ -50,9 +54,9 @@ function SectionTabs({ label, tabs }: { label: string; tabs: SectionTab[] }) {
 }
 
 export function ProviderTabs() {
-  return <SectionTabs label="Provider configuration" tabs={providerTabs} />;
+  return <SectionTabs label={{ en: "Provider configuration", zh: "供应商配置" }} tabs={providerTabs} />;
 }
 
 export function ActivityTabs() {
-  return <SectionTabs label="Activity" tabs={activityTabs} />;
+  return <SectionTabs label={{ en: "Activity", zh: "活动" }} tabs={activityTabs} />;
 }

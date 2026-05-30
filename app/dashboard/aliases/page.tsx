@@ -20,27 +20,27 @@ export default async function AliasesPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-5">
       <ProviderTabs />
-    <ResourceManager
-      title="Model Aliases"
+      <ResourceManager
+      title={{ en: "Model Aliases", zh: "模型别名" }}
       endpoint="/api/admin/aliases"
       returnPath="/dashboard/aliases"
       initialCreate={params.mode === "new"}
-      notice={params.status === "created" ? "Created" : null}
+      notice={params.status === "created" ? { en: "Created", zh: "已创建" } : null}
       initialItems={toClientItems(aliases.map(serializeAlias))}
       fields={[
-        { name: "alias", label: "Alias", required: true, placeholder: "chat-default" },
+        { name: "alias", label: { en: "Alias", zh: "别名" }, required: true, placeholder: "chat-default" },
         {
           name: "targetModel",
-          label: "Target model",
+          label: { en: "Target model", zh: "目标模型" },
           type: "select",
           required: true,
           options: models.map((model) => ({ value: model.publicModelName, label: model.publicModelName })),
           optionEndpoint: "/api/admin/models",
           optionValue: "publicModelName",
           optionLabel: "publicModelName",
-          emptyOptionLabel: "Create a model mapping first",
+          emptyOptionLabel: { en: "Create a model mapping first", zh: "请先创建模型映射" },
         },
-        { name: "enabled", label: "Enabled", type: "checkbox", defaultValue: true },
+        { name: "enabled", label: { en: "Enabled", zh: "启用" }, type: "checkbox", defaultValue: true },
       ]}
     />
     </div>

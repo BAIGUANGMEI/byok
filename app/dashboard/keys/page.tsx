@@ -17,18 +17,18 @@ export default async function KeysPage({ searchParams }: PageProps) {
 
   return (
     <ResourceManager
-      title="Relay API Keys"
+      title={{ en: "Relay API Keys", zh: "中继 API 密钥" }}
       endpoint="/api/admin/keys"
       returnPath="/dashboard/keys"
       initialCreate={params.mode === "new"}
       initialItems={toClientItems(keys.map(serializeRelayKey))}
       fields={[
-        { name: "name", label: "Name", required: true, placeholder: "Local test key" },
-        { name: "keyPrefix", label: "Prefix", tableOnly: true },
-        { name: "last4", label: "Last 4", tableOnly: true },
-        { name: "enabled", label: "Enabled", type: "checkbox", defaultValue: true },
-        { name: "monthlyTokenLimit", label: "Monthly token limit", type: "number" },
-        { name: "monthlyRequestLimit", label: "Monthly request limit", type: "number" },
+        { name: "name", label: { en: "Name", zh: "名称" }, required: true, placeholder: { en: "Local test key", zh: "本地测试密钥" } },
+        { name: "keyPrefix", label: { en: "Prefix", zh: "前缀" }, tableOnly: true },
+        { name: "last4", label: { en: "Last 4", zh: "后 4 位" }, tableOnly: true },
+        { name: "enabled", label: { en: "Enabled", zh: "启用" }, type: "checkbox", defaultValue: true },
+        { name: "monthlyTokenLimit", label: { en: "Monthly token limit", zh: "每月 Token 限额" }, type: "number" },
+        { name: "monthlyRequestLimit", label: { en: "Monthly request limit", zh: "每月请求限额" }, type: "number" },
       ]}
     />
   );

@@ -6,11 +6,16 @@ import { estimateTokensFromText } from "@/lib/internal/token-estimator";
 import { parseAnthropicRequest } from "@/lib/protocols/anthropic/parse-request";
 import { formatAnthropicResponse } from "@/lib/protocols/anthropic/format-response";
 import { formatOpenAIResponse } from "@/lib/protocols/openai/format-response";
+import { formatOpenAIStreamEvent } from "@/lib/protocols/openai/format-stream";
 import { parseOpenAIRequest } from "@/lib/protocols/openai/parse-request";
 import { internalMessagesToAnthropic } from "@/lib/providers/anthropic-compatible";
 import { fetchWithImageUrlFallback } from "@/lib/providers/image-url-fallback";
 import { buildProviderAuthHeaders } from "@/lib/providers/mimo";
-import { buildOpenAICompatibleBody, internalMessagesToOpenAI } from "@/lib/providers/openai-compatible";
+import {
+  buildOpenAICompatibleBody,
+  internalMessagesToOpenAI,
+  OpenAICompatibleAdapter,
+} from "@/lib/providers/openai-compatible";
 import { resolveModelFromRecords } from "@/lib/router/resolve-model";
 import { shouldFallback } from "@/lib/router/should-fallback";
 import type { InternalChatResponse } from "@/lib/internal/types";
@@ -239,6 +244,160 @@ describe("protocol parsing and formatting", () => {
     expect(buildProviderAuthHeaders(context)).toEqual({ "api-key": "key" });
   });
 
+  it("uses Kimi max_completion_tokens for OpenAI-compatible upstream requests", () => {
+    const request = parseOpenAIRequest({
+      model: "kimi-k2",
+      messages: [{ role: "user", content: "hello" }],
+      max_tokens: 256,
+      prompt_cache_key: "stable-chat",
+      thinking: { type: "enabled" },
+    });
+    const context: ProviderInvokeContext = {
+      source: {
+        id: "source",
+        name: "Kimi",
+        providerType: "kimi",
+        protocol: "openai_chat",
+        baseUrl: "https://api.moonshot.cn/v1",
+        authType: "bearer",
+        apiKeyEncrypted: "encrypted",
+        timeoutMs: 60000,
+      },
+      model: {
+        id: "model",
+        publicModelName: "kimi-k2",
+        upstreamModelName: "kimi-k2-latest",
+        sourceId: "source",
+        supportsStreaming: true,
+      },
+      apiKey: "key",
+      timeoutMs: 60000,
+    };
+
+    const body = buildOpenAICompatibleBody(request, context, false, false);
+    expect(body.max_completion_tokens).toBe(256);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.prompt_cache_key).toBe("stable-chat");
+    expect(body.thinking).toEqual({ type: "enabled" });
+  });
+
+  it("reads Kimi cached_tokens usage from upstream responses", async () => {
+    const request = parseOpenAIRequest({
+      model: "kimi-k2",
+      messages: [{ role: "user", content: "hello" }],
+    });
+    const context: ProviderInvokeContext = {
+      source: {
+        id: "source",
+        name: "Kimi",
+        providerType: "kimi",
+        protocol: "openai_chat",
+        baseUrl: "https://api.moonshot.cn/v1",
+        authType: "bearer",
+        apiKeyEncrypted: "encrypted",
+        timeoutMs: 60000,
+      },
+      model: {
+        id: "model",
+        publicModelName: "kimi-k2",
+        upstreamModelName: "kimi-k2-latest",
+        sourceId: "source",
+        supportsStreaming: true,
+      },
+      apiKey: "key",
+      timeoutMs: 60000,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () =>
+        Response.json({
+          id: "chatcmpl_kimi",
+          choices: [{ message: { content: "hello" }, finish_reason: "stop" }],
+          usage: {
+            prompt_tokens: 100,
+            cached_tokens: 40,
+            completion_tokens: 8,
+            total_tokens: 108,
+          },
+        }),
+      ),
+    );
+
+    const response = await new OpenAICompatibleAdapter().invokeChat(request, context);
+    expect(response.usage).toEqual({
+      inputTokens: 100,
+      inputCacheHitTokens: 40,
+      inputCacheMissTokens: 60,
+      outputTokens: 8,
+      totalTokens: 108,
+    });
+  });
+
+  it("round-trips tool calls and reasoning across client API formats", async () => {
+    const request = parseOpenAIRequest({
+      model: "deepseek-reasoner",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          reasoning_content: "Need a tool.",
+          tool_calls: [
+            {
+              id: "call_weather",
+              type: "function",
+              function: { name: "get_weather", arguments: "{\"city\":\"HK\"}" },
+            },
+          ],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "get_weather",
+            parameters: { type: "object", properties: { city: { type: "string" } } },
+          },
+        },
+      ],
+    });
+
+    expect(internalMessagesToAnthropic(request.messages)[0]?.content).toEqual([
+      { type: "thinking", thinking: "Need a tool." },
+      { type: "tool_use", id: "call_weather", name: "get_weather", input: { city: "HK" } },
+    ]);
+
+    const response: InternalChatResponse = {
+      id: "chatcmpl_tools",
+      model: "deepseek-reasoner",
+      resolvedModel: "deepseek-reasoner",
+      sourceId: "source",
+      upstreamModel: "deepseek-reasoner",
+      reasoningContent: "Need a tool.",
+      content: [{ type: "tool_call", id: "call_weather", name: "get_weather", arguments: "{\"city\":\"HK\"}" }],
+      finishReason: "tool_calls",
+    };
+
+    expect(formatOpenAIResponse(response, "deepseek-reasoner")).toMatchObject({
+      choices: [
+        {
+          message: {
+            content: null,
+            reasoning_content: "Need a tool.",
+            tool_calls: [{ function: { name: "get_weather", arguments: "{\"city\":\"HK\"}" } }],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    });
+    expect(formatAnthropicResponse(response, "deepseek-reasoner")).toMatchObject({
+      content: [
+        { type: "thinking", thinking: "Need a tool." },
+        { type: "tool_use", id: "call_weather", name: "get_weather", input: { city: "HK" } },
+      ],
+      stop_reason: "tool_use",
+    });
+  });
+
   it("tries image URLs first and falls back to base64 after provider rejection", async () => {
     const request = parseAnthropicRequest({
       model: "mimo-v2.5",
@@ -286,16 +445,35 @@ describe("protocol parsing and formatting", () => {
       upstreamModel: "upstream",
       content: [{ type: "text", text: "hello" }],
       finishReason: "length",
-      usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+      usage: { inputTokens: 10, inputCacheHitTokens: 6, inputCacheMissTokens: 4, outputTokens: 2, totalTokens: 12 },
     };
     expect(formatOpenAIResponse(response, "coding")).toMatchObject({
       choices: [{ finish_reason: "length" }],
-      usage: { total_tokens: 3 },
+      usage: {
+        prompt_tokens: 10,
+        total_tokens: 12,
+        prompt_tokens_details: { cached_tokens: 6 },
+      },
     });
     expect(formatAnthropicResponse(response, "coding")).toMatchObject({
       stop_reason: "max_tokens",
-      usage: { input_tokens: 1, output_tokens: 2 },
+      usage: { input_tokens: 4, cache_read_input_tokens: 6, output_tokens: 2 },
     });
+  });
+
+  it("emits OpenAI streaming usage chunks with cache hit and miss fields", () => {
+    const chunk = formatOpenAIStreamEvent(
+      {
+        type: "usage",
+        usage: { inputTokens: 10, inputCacheHitTokens: 6, inputCacheMissTokens: 4, outputTokens: 2, totalTokens: 12 },
+      },
+      { id: "chatcmpl_test", model: "coding" },
+    );
+
+    expect(chunk).toContain('"choices":[]');
+    expect(chunk).toContain('"cached_tokens":6');
+    expect(chunk).not.toContain("prompt_cache_hit_tokens");
+    expect(chunk).not.toContain("prompt_cache_miss_tokens");
   });
 
   it("exposes one internal response through both client API formats", () => {

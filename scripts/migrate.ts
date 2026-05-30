@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import postgres from "postgres";
 import { getEnv } from "../lib/env";
@@ -29,8 +29,14 @@ const sql = postgres(getEnv().DATABASE_URL, {
 });
 
 try {
-  const migration = await readFile(join(process.cwd(), "drizzle", "0000_initial.sql"), "utf8");
-  await sql.unsafe(migration);
+  const migrationDir = join(process.cwd(), "drizzle");
+  const migrationFiles = (await readdir(migrationDir))
+    .filter((file) => file.endsWith(".sql"))
+    .sort((a, b) => a.localeCompare(b));
+  for (const file of migrationFiles) {
+    const migration = await readFile(join(migrationDir, file), "utf8");
+    await sql.unsafe(migration);
+  }
   console.log("Migration complete");
 } finally {
   await sql.end();

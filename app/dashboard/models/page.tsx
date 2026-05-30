@@ -21,41 +21,41 @@ export default async function ModelsPage({ searchParams }: PageProps) {
     <div className="space-y-5">
       <ProviderTabs />
       <ResourceManager
-        title="Model Mappings"
+        title={{ en: "Model Mappings", zh: "模型映射" }}
         endpoint="/api/admin/models"
         returnPath="/dashboard/models"
         initialCreate={params.mode === "new"}
-        notice={params.status === "created" ? "Created" : null}
+        notice={params.status === "created" ? { en: "Created", zh: "已创建" } : null}
         initialItems={toClientItems(models.map(serializeModel))}
         fields={[
           {
             name: "publicModelName",
-            label: "Public model",
+            label: { en: "Public model", zh: "公开模型名" },
             required: true,
             placeholder: "gpt-4o-mini",
           },
           {
             name: "sourceId",
-            label: "Provider source",
+            label: { en: "Provider source", zh: "供应商来源" },
             type: "select",
             required: true,
             options: sources.map((source) => ({ value: source.id, label: source.name })),
             optionEndpoint: "/api/admin/sources",
             optionValue: "id",
             optionLabel: "name",
-            emptyOptionLabel: "Create a source first",
+            emptyOptionLabel: { en: "Create a source first", zh: "请先创建来源" },
           },
-          { name: "upstreamModelName", label: "Upstream model", required: true, placeholder: "gpt-4o-mini" },
-          { name: "enabled", label: "Enabled", type: "checkbox", defaultValue: true },
-          { name: "supportsStreaming", label: "Streaming", type: "checkbox", defaultValue: true },
-          { name: "supportsTools", label: "Tools", type: "checkbox", defaultValue: false },
-          { name: "supportsVision", label: "Vision", type: "checkbox", defaultValue: false },
-          { name: "supportsJsonMode", label: "JSON mode", type: "checkbox", defaultValue: false },
-          { name: "contextWindow", label: "Context window", type: "number", placeholder: "128000" },
-          { name: "maxOutputTokens", label: "Max output tokens", type: "number", placeholder: "4096" },
-          { name: "inputPricePer1M", label: "Input price / 1M", placeholder: "0.15000000" },
-          { name: "outputPricePer1M", label: "Output price / 1M", placeholder: "0.60000000" },
-          { name: "currency", label: "Currency", defaultValue: "USD" },
+          { name: "upstreamModelName", label: { en: "Upstream model", zh: "上游模型名" }, required: true, placeholder: "gpt-4o-mini" },
+          { name: "enabled", label: { en: "Enabled", zh: "启用" }, type: "checkbox", defaultValue: true },
+          { name: "supportsStreaming", label: { en: "Streaming", zh: "流式" }, type: "checkbox", defaultValue: true },
+          { name: "supportsTools", label: { en: "Tools", zh: "工具" }, type: "checkbox", defaultValue: false },
+          { name: "supportsVision", label: { en: "Vision", zh: "视觉" }, type: "checkbox", defaultValue: false },
+          { name: "supportsJsonMode", label: { en: "JSON mode", zh: "JSON 模式" }, type: "checkbox", defaultValue: false },
+          { name: "contextWindow", label: { en: "Context window", zh: "上下文窗口" }, type: "number", placeholder: "128000" },
+          { name: "maxOutputTokens", label: { en: "Max output tokens", zh: "最大输出 Token" }, type: "number", placeholder: "4096" },
+          { name: "inputPricePer1M", label: { en: "Input price / 1M", zh: "输入价格 / 百万" }, placeholder: "0.15000000" },
+          { name: "outputPricePer1M", label: { en: "Output price / 1M", zh: "输出价格 / 百万" }, placeholder: "0.60000000" },
+          { name: "currency", label: { en: "Currency", zh: "货币" }, defaultValue: "USD" },
         ]}
       />
     </div>

@@ -20,28 +20,28 @@ export default async function RoutingPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-5">
       <ProviderTabs />
-    <ResourceManager
-      title="Routing Rules"
+      <ResourceManager
+      title={{ en: "Routing Rules", zh: "路由规则" }}
       endpoint="/api/admin/routing"
       returnPath="/dashboard/routing"
       initialCreate={params.mode === "new"}
-      notice={params.status === "created" ? "Created" : null}
+      notice={params.status === "created" ? { en: "Created", zh: "已创建" } : null}
       initialItems={toClientItems(rules.map(serializeRoute))}
       fields={[
-        { name: "alias", label: "Alias", required: true, placeholder: "chat-default" },
+        { name: "alias", label: { en: "Alias", zh: "别名" }, required: true, placeholder: "chat-default" },
         {
           name: "modelMappingId",
-          label: "Model mapping",
+          label: { en: "Model mapping", zh: "模型映射" },
           type: "select",
           required: true,
           options: models.map((model) => ({ value: model.id, label: model.publicModelName })),
           optionEndpoint: "/api/admin/models",
           optionValue: "id",
           optionLabel: "publicModelName",
-          emptyOptionLabel: "Create a model mapping first",
+          emptyOptionLabel: { en: "Create a model mapping first", zh: "请先创建模型映射" },
         },
-        { name: "priority", label: "Priority", type: "number", defaultValue: 100 },
-        { name: "enabled", label: "Enabled", type: "checkbox", defaultValue: true },
+        { name: "priority", label: { en: "Priority", zh: "优先级" }, type: "number", defaultValue: 100 },
+        { name: "enabled", label: { en: "Enabled", zh: "启用" }, type: "checkbox", defaultValue: true },
       ]}
     />
     </div>

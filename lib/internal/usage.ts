@@ -9,10 +9,41 @@ export function normalizeUsage(
   responseText: string,
   upstreamUsage?: InternalUsage,
 ): Required<InternalUsage> {
-  const inputTokens = upstreamUsage?.inputTokens ?? estimateInputTokens(request);
+  const reportedInputTokens = upstreamUsage?.inputTokens;
+  const reportedCacheHitTokens = upstreamUsage?.inputCacheHitTokens;
+  const reportedCacheMissTokens = upstreamUsage?.inputCacheMissTokens;
+  const estimatedInputTokens = estimateInputTokens(request);
+  const inputTokens =
+    reportedInputTokens ??
+    (reportedCacheHitTokens !== undefined || reportedCacheMissTokens !== undefined
+      ? (reportedCacheHitTokens ?? 0) + (reportedCacheMissTokens ?? 0)
+      : estimatedInputTokens);
+  const inputCacheHitTokens = reportedCacheHitTokens ?? 0;
+  const inputCacheMissTokens = reportedCacheMissTokens ?? Math.max(inputTokens - inputCacheHitTokens, 0);
   const outputTokens = upstreamUsage?.outputTokens ?? estimateTokensFromText(responseText);
   const totalTokens = upstreamUsage?.totalTokens ?? inputTokens + outputTokens;
-  return { inputTokens, outputTokens, totalTokens };
+  return { inputTokens, outputTokens, totalTokens, inputCacheHitTokens, inputCacheMissTokens };
+}
+
+export function mergeUsage(previous: InternalUsage | undefined, next: InternalUsage): InternalUsage {
+  const inputTokens = next.inputTokens ?? previous?.inputTokens;
+  const outputTokens = next.outputTokens ?? previous?.outputTokens;
+  const inputCacheHitTokens = next.inputCacheHitTokens ?? previous?.inputCacheHitTokens;
+  const inputCacheMissTokens = next.inputCacheMissTokens ?? previous?.inputCacheMissTokens;
+  const totalTokens =
+    next.totalTokens !== undefined && next.inputTokens !== undefined && next.outputTokens !== undefined
+      ? next.totalTokens
+      : inputTokens !== undefined || outputTokens !== undefined
+        ? (inputTokens ?? 0) + (outputTokens ?? 0)
+        : previous?.totalTokens ?? next.totalTokens;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    inputCacheHitTokens,
+    inputCacheMissTokens,
+  };
 }
 
 export function estimateCost(options: {
@@ -70,6 +101,8 @@ export async function recordUsageAndLog(input: {
     errorType: input.errorType ?? null,
     errorMessage: input.errorMessage ?? null,
     inputTokens: usage.inputTokens ?? null,
+    inputCacheHitTokens: usage.inputCacheHitTokens ?? 0,
+    inputCacheMissTokens: usage.inputCacheMissTokens ?? 0,
     outputTokens: usage.outputTokens ?? null,
     totalTokens: usage.totalTokens ?? null,
     estimatedCost: input.estimatedCost ?? null,
@@ -90,6 +123,8 @@ export async function recordUsageAndLog(input: {
       successCount: input.status === "success" ? 1 : 0,
       errorCount: input.status === "error" ? 1 : 0,
       inputTokens: usage.inputTokens ?? 0,
+      inputCacheHitTokens: usage.inputCacheHitTokens ?? 0,
+      inputCacheMissTokens: usage.inputCacheMissTokens ?? 0,
       outputTokens: usage.outputTokens ?? 0,
       totalTokens: usage.totalTokens ?? 0,
       estimatedCost: input.estimatedCost ?? "0",
@@ -102,6 +137,8 @@ export async function recordUsageAndLog(input: {
         successCount: sql`${dailyUsage.successCount} + ${input.status === "success" ? 1 : 0}`,
         errorCount: sql`${dailyUsage.errorCount} + ${input.status === "error" ? 1 : 0}`,
         inputTokens: sql`${dailyUsage.inputTokens} + ${usage.inputTokens ?? 0}`,
+        inputCacheHitTokens: sql`${dailyUsage.inputCacheHitTokens} + ${usage.inputCacheHitTokens ?? 0}`,
+        inputCacheMissTokens: sql`${dailyUsage.inputCacheMissTokens} + ${usage.inputCacheMissTokens ?? 0}`,
         outputTokens: sql`${dailyUsage.outputTokens} + ${usage.outputTokens ?? 0}`,
         totalTokens: sql`${dailyUsage.totalTokens} + ${usage.totalTokens ?? 0}`,
         estimatedCost: sql`${dailyUsage.estimatedCost} + ${input.estimatedCost ?? "0"}`,

@@ -16,7 +16,7 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  NEXT_PUBLIC_APP_NAME: z.string().default("AI Relay Gateway"),
+  NEXT_PUBLIC_APP_NAME: z.string().default("BYOK"),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
@@ -33,5 +33,5 @@ export function getEnv(): AppEnv {
 }
 
 export function getOptionalAppName(): string {
-  return process.env.NEXT_PUBLIC_APP_NAME || "AI Relay Gateway";
+  return process.env.NEXT_PUBLIC_APP_NAME || "BYOK";
 }

@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { usePreferences } from "@/components/preferences-provider";
 
 export function SignOutButton() {
   const router = useRouter();
+  const { t } = usePreferences();
 
   async function signOut() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -14,9 +16,9 @@ export function SignOutButton() {
   return (
     <button
       onClick={signOut}
-      className="rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-500"
+      className="codex-hover w-full rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-300"
     >
-      Sign out
+      {t("signOut")}
     </button>
   );
 }

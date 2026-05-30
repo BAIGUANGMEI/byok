@@ -1,24 +1,67 @@
 import { randomUUID } from "node:crypto";
 import { imageSourceFromAnthropicSource } from "@/lib/internal/images";
 import { RelayError } from "@/lib/internal/errors";
-import type { InternalChatRequest, InternalContentBlock, InternalMessage } from "@/lib/internal/types";
+import type { InternalChatRequest, InternalContentBlock, InternalMessage, InternalToolCall } from "@/lib/internal/types";
 
-function parseAnthropicContent(content: unknown): InternalContentBlock[] {
-  if (typeof content === "string") return [{ type: "text", text: content }];
-  if (!Array.isArray(content)) return [{ type: "text", text: "" }];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
-  return content.flatMap((item): InternalContentBlock[] => {
-    if (!item || typeof item !== "object") return [];
-    const block = item as Record<string, unknown>;
+function objectWithout(source: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
+  const ignored = new Set(keys);
+  const output = Object.fromEntries(Object.entries(source).filter(([key]) => !ignored.has(key)));
+  return Object.keys(output).length ? output : undefined;
+}
+
+function parseAnthropicContent(content: unknown): {
+  content: InternalContentBlock[];
+  toolCalls?: InternalToolCall[];
+  reasoningContent?: string;
+} {
+  if (typeof content === "string") return { content: [{ type: "text", text: content }] };
+  if (!Array.isArray(content)) return { content: [{ type: "text", text: "" }] };
+
+  const blocks: InternalContentBlock[] = [];
+  const toolCalls: InternalToolCall[] = [];
+  const reasoningParts: string[] = [];
+
+  for (const item of content) {
+    if (!isRecord(item)) continue;
+    const block = item;
     if (block.type === "text" && typeof block.text === "string") {
-      return [{ type: "text", text: block.text }];
+      blocks.push({ type: "text", text: block.text, raw: objectWithout(block, ["type", "text"]) });
+      continue;
     }
     if (block.type === "image" && typeof block.source === "object") {
       const source = imageSourceFromAnthropicSource(block.source);
-      if (source) return [{ type: "image", source }];
+      if (source) blocks.push({ type: "image", source, raw: objectWithout(block, ["type", "source"]) });
+      continue;
     }
-    return [];
-  });
+    if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+      blocks.push({
+        type: "tool_result",
+        toolCallId: block.tool_use_id,
+        content: block.content,
+        raw: objectWithout(block, ["type", "tool_use_id", "content"]),
+      });
+      continue;
+    }
+    if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+      toolCalls.push({ id: block.id, name: block.name, arguments: block.input ?? {} });
+      continue;
+    }
+    if (block.type === "thinking" && typeof block.thinking === "string") {
+      reasoningParts.push(block.thinking);
+      continue;
+    }
+    blocks.push({ type: "raw", content: block });
+  }
+
+  return {
+    content: blocks.length ? blocks : [{ type: "text", text: "" }],
+    toolCalls: toolCalls.length ? toolCalls : undefined,
+    reasoningContent: reasoningParts.length ? reasoningParts.join("") : undefined,
+  };
 }
 
 function parseSystem(system: unknown): string | undefined {
@@ -39,6 +82,23 @@ function parseSystem(system: unknown): string | undefined {
   return undefined;
 }
 
+function collectExtraBody(raw: Record<string, unknown>): Record<string, unknown> | undefined {
+  const handled = new Set([
+    "model",
+    "messages",
+    "system",
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "stop_sequences",
+    "stream",
+    "tools",
+    "tool_choice",
+  ]);
+  const entries = Object.entries(raw).filter(([key]) => !handled.has(key));
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export function parseAnthropicRequest(body: unknown): InternalChatRequest {
   if (!body || typeof body !== "object") {
     throw new RelayError({ type: "invalid_request_error", message: "Request body must be an object", status: 400 });
@@ -53,7 +113,7 @@ export function parseAnthropicRequest(body: unknown): InternalChatRequest {
   }
 
   const messages: InternalMessage[] = raw.messages.map((message) => {
-    const item = message as { role?: string; content?: unknown };
+    const item = isRecord(message) ? message : {};
     if (item.role !== "user" && item.role !== "assistant") {
       throw new RelayError({
         type: "invalid_request_error",
@@ -61,9 +121,13 @@ export function parseAnthropicRequest(body: unknown): InternalChatRequest {
         status: 400,
       });
     }
+    const parsed = parseAnthropicContent(item.content);
     return {
       role: item.role,
-      content: parseAnthropicContent(item.content),
+      content: parsed.content,
+      toolCalls: parsed.toolCalls,
+      reasoningContent: parsed.reasoningContent,
+      raw: objectWithout(item, ["role", "content"]),
     };
   });
 
@@ -83,6 +147,7 @@ export function parseAnthropicRequest(body: unknown): InternalChatRequest {
     stream: raw.stream === true,
     tools: Array.isArray(raw.tools) ? raw.tools : undefined,
     toolChoice: raw.tool_choice,
+    extraBody: collectExtraBody(raw),
     rawRequest: raw,
   };
 }

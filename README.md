@@ -1,6 +1,17 @@
-# AI Relay Gateway
+# BYOK
 
-Personal AI API relay gateway that exposes OpenAI-compatible and Anthropic-compatible APIs over configurable upstream providers.
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/PostgreSQL-Supabase-3ecf8e?logo=supabase&logoColor=white" alt="Supabase PostgreSQL" />
+  <img src="https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel" alt="Deploy on Vercel" />
+  <img src="https://img.shields.io/badge/API-OpenAI%20compatible-0a84ff" alt="OpenAI-compatible API" />
+  <img src="https://img.shields.io/badge/API-Anthropic%20compatible-d97706" alt="Anthropic-compatible API" />
+</p>
+
+BYOK API relay gateway that exposes OpenAI-compatible and Anthropic-compatible APIs over configurable upstream providers.
+
+![BYOK dashboard overview](docs/assets/homepage.jpg)
 
 ## Features
 
@@ -25,6 +36,16 @@ Personal AI API relay gateway that exposes OpenAI-compatible and Anthropic-compa
 - Vitest
 - Node.js crypto
 
+## Deploy
+
+For a zero-to-production deployment using Vercel and Supabase PostgreSQL, see:
+
+- [Deploy BYOK to Vercel with Supabase](docs/deploy-vercel-supabase.md)
+
+After preparing a Supabase database and production secrets, you can start the Vercel setup here:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FBAIGUANGMEI%2Fbyok&project-name=byok&repository-name=byok&env=DATABASE_URL,ADMIN_EMAIL,ADMIN_PASSWORD,AUTH_SECRET,ENCRYPTION_KEY_BASE64,RELAY_DEFAULT_TIMEOUT_MS,RELAY_MAX_REQUEST_BODY_BYTES,LOG_PROMPTS_DEFAULT,ALLOW_INSECURE_PROVIDER_URLS,NEXT_PUBLIC_APP_NAME&envDescription=Configure%20BYOK%20with%20a%20Supabase%20Postgres%20connection%20and%20production%20secrets.&envLink=https%3A%2F%2Fgithub.com%2FBAIGUANGMEI%2Fbyok%2Fblob%2Fmain%2Fdocs%2Fdeploy-vercel-supabase.md)
+
 ## Environment
 
 Copy `.env.example` to `.env` and fill values:
@@ -39,7 +60,7 @@ RELAY_DEFAULT_TIMEOUT_MS="60000"
 RELAY_MAX_REQUEST_BODY_BYTES="4500000"
 LOG_PROMPTS_DEFAULT="false"
 ALLOW_INSECURE_PROVIDER_URLS="false"
-NEXT_PUBLIC_APP_NAME="AI Relay Gateway"
+NEXT_PUBLIC_APP_NAME="BYOK"
 ```
 
 Generate an encryption key:

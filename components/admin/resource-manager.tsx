@@ -1,28 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/admin/page-header";
+import { usePreferences } from "@/components/preferences-provider";
+import type { LocalizedText } from "@/lib/i18n";
 
 type FieldOption = {
-  label: string;
+  label: LocalizedText;
   value: string;
 };
 
 export type Field = {
   name: string;
-  label: string;
+  label: LocalizedText;
   type?: "text" | "number" | "checkbox" | "password" | "textarea" | "select";
-  placeholder?: string;
+  placeholder?: LocalizedText;
   createOnly?: boolean;
   formOnly?: boolean;
   tableOnly?: boolean;
   required?: boolean;
   defaultValue?: string | number | boolean;
-  help?: string;
+  help?: LocalizedText;
   options?: FieldOption[];
   optionEndpoint?: string;
   optionValue?: string;
   optionLabel?: string;
-  emptyOptionLabel?: string;
+  emptyOptionLabel?: LocalizedText;
 };
 
 type ApiItem = Record<string, unknown> & { id: string };
@@ -37,15 +40,16 @@ export function ResourceManager({
   notice,
   testEndpointTemplate,
 }: {
-  title: string;
+  title: LocalizedText;
   endpoint: string;
   fields: Field[];
   returnPath: string;
   initialCreate?: boolean;
   initialItems?: ApiItem[];
-  notice?: string | null;
+  notice?: LocalizedText | null;
   testEndpointTemplate?: string;
 }) {
+  const { text, t } = usePreferences();
   const [items, setItems] = useState<ApiItem[]>(initialItems);
   const [editing, setEditing] = useState<ApiItem | null>(null);
   const [form, setForm] = useState<Record<string, unknown>>(() =>
@@ -55,7 +59,7 @@ export function ResourceManager({
         )
       : {},
   );
-  const [message, setMessage] = useState<string | null>(notice ?? null);
+  const [message, setMessage] = useState<string | null>(notice ? text(notice) : null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dynamicOptions, setDynamicOptions] = useState<Record<string, FieldOption[]>>({});
@@ -67,6 +71,7 @@ export function ResourceManager({
   );
   const tableFields = useMemo(() => fields.filter((field) => !field.formOnly).slice(0, 6), [fields]);
   const modalOpen = editing !== null || Object.keys(form).length > 0;
+  const titleText = text(title);
   const closeModal = useCallback(() => {
     setEditing(null);
     setForm({});
@@ -107,13 +112,13 @@ export function ResourceManager({
         error?: { message?: string };
       };
       if (!response.ok) {
-        setMessage(body.error?.message ?? "Failed to load records");
+        setMessage(body.error?.message ?? t("failedToLoad"));
         setItems([]);
         return;
       }
       setItems(body.data ?? []);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load records");
+      setMessage(error instanceof Error ? error.message : t("failedToLoad"));
       setItems([]);
     } finally {
       setLoading(false);
@@ -210,17 +215,17 @@ export function ResourceManager({
         error?: { message?: string };
       };
       if (!response.ok) {
-        setMessage(body.error?.message ?? "Request failed");
+        setMessage(body.error?.message ?? t("requestFailed"));
         return;
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Request failed");
+      setMessage(error instanceof Error ? error.message : t("requestFailed"));
       return;
     } finally {
       setSubmitting(false);
     }
 
-    const successMessage = body.data && "key" in body.data ? `Created key: ${String(body.data.key)}` : "Saved";
+    const successMessage = body.data && "key" in body.data ? `${t("createdKey")}: ${String(body.data.key)}` : t("saved");
     setEditing(null);
     setForm({});
     await load();
@@ -228,10 +233,10 @@ export function ResourceManager({
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this item?")) return;
+    if (!confirm(t("deleteConfirm"))) return;
     const response = await fetch(`${endpoint}/${id}`, { method: "DELETE" });
     if (!response.ok) {
-      setMessage("Delete failed");
+      setMessage(t("deleteFailed"));
       return;
     }
     await load();
@@ -245,28 +250,28 @@ export function ResourceManager({
       message?: string;
       error?: { message?: string };
     };
-    setMessage(body.message ?? body.error?.message ?? (response.ok ? "Done" : "Failed"));
+    setMessage(body.message ?? body.error?.message ?? (response.ok ? t("done") : t("failed")));
     await load();
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">{title}</h2>
-          <p className="text-sm text-zinc-400">Create, edit, disable, and delete records.</p>
-        </div>
-        <a
-          href={`${returnPath}?mode=new`}
-          onClick={(event) => {
-            event.preventDefault();
-            startCreate();
-          }}
-          className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950"
-        >
-          New
-        </a>
-      </div>
+      <PageHeader
+        title={titleText}
+        description={t("createEditDelete")}
+        action={
+          <a
+            href={`${returnPath}?mode=new`}
+            onClick={(event) => {
+              event.preventDefault();
+              startCreate();
+            }}
+            className="codex-button inline-flex rounded-md px-3 py-2 text-sm font-semibold"
+          >
+            {t("new")}
+          </a>
+        }
+      />
 
       {!modalOpen && message ? (
         <div className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-200">{message}</div>
@@ -288,11 +293,11 @@ export function ResourceManager({
           >
             <div className="flex items-center justify-between gap-4 border-b border-zinc-800 px-5 py-4">
               <h3 id="resource-modal-title" className="text-lg font-semibold">
-                {editing ? `Edit ${title}` : `New ${title}`}
+                {editing ? `${t("edit")} ${titleText}` : `${t("new")} ${titleText}`}
               </h3>
               <button
                 type="button"
-                aria-label="Close"
+                aria-label={t("close")}
                 onClick={closeModal}
                 disabled={submitting}
                 className="grid h-8 w-8 place-items-center rounded-md border border-zinc-700 text-lg leading-none text-zinc-300 hover:border-zinc-500 hover:text-white disabled:opacity-50"
@@ -310,7 +315,7 @@ export function ResourceManager({
               <div className="grid gap-4 md:grid-cols-2">
                 {visibleFields.map((field) => (
                   <label key={field.name} className="block text-sm text-zinc-300">
-                    {field.label}
+                    {text(field.label)}
                     {field.type === "checkbox" ? (
                       <span className="mt-2 flex min-h-10 items-center rounded-md border border-zinc-700 bg-zinc-950 px-3">
                         <input type="hidden" name={field.name} value="false" />
@@ -327,40 +332,40 @@ export function ResourceManager({
                       </span>
                     ) : field.type === "select" ? (
                       <select
-                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        className="codex-focus mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
                         name={field.name}
                         value={String(form[field.name] ?? "")}
                         required={field.required}
                         onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
                       >
-                        <option value="">{field.emptyOptionLabel ?? "Select an option"}</option>
+                        <option value="">{field.emptyOptionLabel ? text(field.emptyOptionLabel) : t("selectOption")}</option>
                         {fieldOptions(field).map((option) => (
                           <option key={option.value} value={option.value}>
-                            {option.label}
+                            {text(option.label)}
                           </option>
                         ))}
                       </select>
                     ) : field.type === "textarea" ? (
                       <textarea
-                        className="mt-2 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        className="codex-focus mt-2 min-h-24 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
                         name={field.name}
                         value={String(form[field.name] ?? "")}
-                        placeholder={field.placeholder}
+                        placeholder={field.placeholder ? text(field.placeholder) : undefined}
                         required={field.required}
                         onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
                       />
                     ) : (
                       <input
-                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        className="codex-focus mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
                         name={field.name}
                         type={field.type ?? "text"}
                         value={String(form[field.name] ?? "")}
-                        placeholder={field.placeholder}
+                        placeholder={field.placeholder ? text(field.placeholder) : undefined}
                         required={field.required}
                         onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
                       />
                     )}
-                    {field.help ? <span className="mt-1 block text-xs text-zinc-500">{field.help}</span> : null}
+                    {field.help ? <span className="mt-1 block text-xs text-zinc-500">{text(field.help)}</span> : null}
                   </label>
                 ))}
               </div>
@@ -371,13 +376,13 @@ export function ResourceManager({
                   disabled={submitting}
                   className="rounded-md border border-zinc-700 px-3 py-2 text-sm hover:border-zinc-500 disabled:opacity-60"
                 >
-                  Cancel
+                  {t("cancel")}
                 </button>
                 <button
                   disabled={submitting}
-                  className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
+                  className="codex-button rounded-md px-3 py-2 text-sm font-semibold"
                 >
-                  {submitting ? "Saving..." : "Save"}
+                  {submitting ? t("saving") : t("save")}
                 </button>
               </div>
             </form>
@@ -389,13 +394,13 @@ export function ResourceManager({
         <table className="w-full text-left text-sm">
           <thead className="text-zinc-400">
             <tr>
-              <th className="px-4 py-3">ID</th>
+              <th className="px-4 py-3">{t("id")}</th>
               {tableFields.map((field) => (
                 <th key={field.name} className="px-4 py-3">
-                  {field.label}
+                  {text(field.label)}
                 </th>
               ))}
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">{t("actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -408,16 +413,16 @@ export function ResourceManager({
                   </td>
                 ))}
                 <td className="whitespace-nowrap px-4 py-3">
-                  <button onClick={() => startEdit(item)} className="mr-2 text-cyan-300 hover:text-cyan-100">
-                    Edit
+                  <button onClick={() => startEdit(item)} className="mr-2 text-blue-300 hover:text-blue-100">
+                    {t("edit")}
                   </button>
                   {testEndpointTemplate ? (
                     <button onClick={() => runTest(item.id)} className="mr-2 text-emerald-300 hover:text-emerald-100">
-                      Test
+                      {t("test")}
                     </button>
                   ) : null}
                   <button onClick={() => remove(item.id)} className="text-red-300 hover:text-red-100">
-                    Delete
+                    {t("delete")}
                   </button>
                 </td>
               </tr>
@@ -425,7 +430,7 @@ export function ResourceManager({
             {!items.length ? (
               <tr>
                 <td className="px-4 py-6 text-zinc-400" colSpan={tableFields.length + 2}>
-                  {loading ? "Loading..." : "No records yet."}
+                  {loading ? t("loading") : t("noRecords")}
                 </td>
               </tr>
             ) : null}
